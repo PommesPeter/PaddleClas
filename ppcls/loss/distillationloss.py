@@ -86,6 +86,36 @@ class DistillationGTCELoss(CELoss):
             for key in loss:
                 loss_dict["{}_{}".format(key, name)] = loss[key]
         return loss_dict
+    
+
+class DistillationMIMCELoss(CELoss):
+    """
+    DistillationGTCELoss
+    """
+
+    def __init__(self,
+                 model_names=[],
+                 epsilon=None,
+                 key=None,
+                 name="loss_mim_ce"):
+        super().__init__(epsilon=epsilon)
+        assert isinstance(model_names, list)
+        self.key = key
+        self.model_name_pairs = model_name_pairs
+        self.name = name
+
+    def forward(self, predicts, batch):
+        loss_dict = dict()
+        for idx, pair in enumerate(self.model_name_pairs):
+            out1 = predicts[pair[0]]
+            out2 = predicts[pair[1]]
+            if self.key is not None:
+                out1 = out1[self.key]
+                out2 = out2[self.key]
+            loss = super().forward(out1, out2)
+            for key in loss:
+                loss_dict["{}_{}_{}".format(key, pair[0], pair[1])] = loss[key]
+        return loss_dict
 
 
 class DistillationDMLLoss(DMLLoss):
