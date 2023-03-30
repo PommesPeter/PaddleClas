@@ -44,6 +44,10 @@ normal_ = Normal
 zeros_ = Constant(value=0.)
 ones_ = Constant(value=1.)
 
+class IBOTHead(nn.Layer):
+    def __init__(self):
+        pass
+
 
 class IBOTVisionTransformer(VisionTransformer):
     def __init__(self,
@@ -86,6 +90,8 @@ class IBOTVisionTransformer(VisionTransformer):
         self.return_all_token = return_all_token
         self.masked_im_modeling = masked_im_modeling
         
+        self.head = IBOTHead()
+        
         if self.masked_im_modeling:
             self.masked_embed = self.create_parameter(shape=(1, embed_dim), default_initializer=zeros_)
         
@@ -119,6 +125,7 @@ class IBOTVisionTransformer(VisionTransformer):
     
     def forward(self, x, mask):
         x = self.forward_features(x, mask, return_all_tokens=self.return_all_tokens)
+        x = self.head(x)
         
         return x
     
