@@ -333,8 +333,8 @@ def IBOT_ViT_large_patch16_224(pretrained=False, use_ssld=False, **kwargs):
     model = IBOTVisionTransformer(
         patch_size=16,
         embed_dim=1024,
-        depth=12,
-        num_heads=12,
+        depth=24,
+        num_heads=16,
         mlp_ratio=4,
         qk_scale=(1024 // 12) ** -0.5,
         **kwargs)
@@ -358,7 +358,7 @@ def IBOT_Swin_tiny_windows7_224(pretrained=False, use_ssld=False, **kwargs):
     _load_pretrained(
         pretrained,
         model,
-        MODEL_URLS["IBOT_Swin_tiny_patch7_224"],
+        MODEL_URLS["IBOT_Swin_tiny_windows7_224"],
         use_ssld=use_ssld)
     return model
 
@@ -375,6 +375,6 @@ def IBOT_Swin_tiny_windows14_224(pretrained=False, use_ssld=False, **kwargs):
     _load_pretrained(
         pretrained,
         model,
-        MODEL_URLS["IBOT_Swin_tiny_patch14_224"],
+        MODEL_URLS["IBOT_Swin_tiny_windows14_224"],
         use_ssld=use_ssld)
     return model
