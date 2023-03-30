@@ -41,7 +41,7 @@ class ImageNetDataset(CommonDataset):
         self.relabel = relabel
         super(ImageNetDataset, self).__init__(image_root, cls_label_path,
                                               transform_ops)
-
+        
     def _load_anno(self, seed=None):
         assert os.path.exists(
             self._cls_path), f"path {self._cls_path} does not exist."
