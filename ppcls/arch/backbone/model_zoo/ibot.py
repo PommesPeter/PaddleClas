@@ -165,6 +165,12 @@ class IBOTSwinTransformer(SwinTransformerV2):
             pretrained_window_sizes,
             **kwargs
         )
+        self.return_all_token = return_all_token
+        self.masked_im_modeling = masked_im_modeling
+        
+        if self.masked_im_modeling:
+            self.masked_embed = self.create_parameter(shape=(1, embed_dim), default_initializer=zeros_)
+        
         
     def forward_features(self, x, mask=None, return_all_tokens=None):
         x = self.patch_embed(x)
