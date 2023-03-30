@@ -44,6 +44,7 @@ normal_ = Normal
 zeros_ = Constant(value=0.)
 ones_ = Constant(value=1.)
 
+
 class MultiCropWrapper(nn.Layer):
     """
     Perform forward pass separately on each resolution input.
@@ -94,6 +95,63 @@ class MultiCropWrapper(nn.Layer):
             return output, output_
         return output_
 
+
+class IBOTHead(nn.Layer):
+    def __init__(self, 
+                 in_dim, 
+                 out_dim, 
+                 norm=None, 
+                 act='gelu', 
+                 last_norm=None, 
+                 num_layers=3, 
+                 hidden_dim=2048, 
+                 bottleneck_dim=256, 
+                 norm_last_layer=True,
+                 epsilon=1e-5,
+                 **kwargs):
+        super().__init__()
+        
+        self.act = eval(act)()
+        if norm is not None:
+            self.norm = eval(norm_layer)(out_dim, epsilon=epsilon)
+        if last_norm is not None:
+            self.last_norm = eval(norm_layer)(out_dim, epsilon=epsilon)
+            
+        self.num_layers = max(num_layers, 1)
+        if num_layers == 1:
+            if bottleneck_dim > 0:
+                self.mlp = nn.Linear(in_dim, bottleneck_dim)
+            else:
+                self.mlp = nn.Linear(in_dim, out_dim)
+        else:
+            layers = [nn.Linear(in_dim, hidden_dim)]
+            if norm is not None:
+                layers.append(norm)
+            layers.append(act)
+            for _ in range(num_layers - 2):
+                layers.append(nn.Linear(hidden_dim, hidden_dim))
+                if norm is not None:
+                    layers.append(norm)
+                layers.append(act)
+            if bottleneck_dim > 0:
+                layers.append(nn.Linear(hidden_dim, bottleneck_dim))
+            else:
+                layers.append(nn.Linear(hidden_dim, out_dim))
+            self.mlp = CustomSequential(*layers)
+        self.apply(self._init_weights)
+        
+        if bottleneck_dim > 0:
+            self.last_layer = nn.utils.weight_norm(nn.Linear(bottleneck_dim, out_dim, bias=False))
+            self.last_layer.weight_g.data.fill_(1)
+            if norm_last_layer:
+                self.last_layer.weight_g.requires_grad = False
+        else:
+            self.last_layer = None
+            
+    def forward(self, x):
+        pass
+
+
 class IBOTVisionTransformer(VisionTransformer):
     def __init__(self,
                  img_size=224,
@@ -135,6 +193,8 @@ class IBOTVisionTransformer(VisionTransformer):
         self.return_all_token = return_all_token
         self.masked_im_modeling = masked_im_modeling
         
+        self.head = IBOTHead()
+        
         if self.masked_im_modeling:
             self.masked_embed = self.create_parameter(shape=(1, embed_dim), default_initializer=zeros_)
         
@@ -168,6 +228,7 @@ class IBOTVisionTransformer(VisionTransformer):
     
     def forward(self, x, mask):
         x = self.forward_features(x, mask, return_all_tokens=self.return_all_tokens)
+        x = self.head(x)
         
         return x
     
@@ -324,8 +385,8 @@ def IBOT_ViT_large_patch16_224(pretrained=False, use_ssld=False, **kwargs):
     model = IBOTVisionTransformer(
         patch_size=16,
         embed_dim=1024,
-        depth=12,
-        num_heads=12,
+        depth=24,
+        num_heads=16,
         mlp_ratio=4,
         qk_scale=(1024 // 12) ** -0.5,
         **kwargs)
@@ -349,7 +410,7 @@ def IBOT_Swin_tiny_windows7_224(pretrained=False, use_ssld=False, **kwargs):
     _load_pretrained(
         pretrained,
         model,
-        MODEL_URLS["IBOT_Swin_tiny_patch7_224"],
+        MODEL_URLS["IBOT_Swin_tiny_windows7_224"],
         use_ssld=use_ssld)
     return model
 
@@ -366,6 +427,6 @@ def IBOT_Swin_tiny_windows14_224(pretrained=False, use_ssld=False, **kwargs):
     _load_pretrained(
         pretrained,
         model,
-        MODEL_URLS["IBOT_Swin_tiny_patch14_224"],
+        MODEL_URLS["IBOT_Swin_tiny_windows14_224"],
         use_ssld=use_ssld)
     return model
