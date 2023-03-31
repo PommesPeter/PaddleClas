@@ -45,6 +45,61 @@ normal_ = Normal
 zeros_ = Constant(value=0.)
 ones_ = Constant(value=1.)
 
+class IBOTHead(nn.Layer):
+    def __init__(self, 
+                 in_dim, 
+                 out_dim, 
+                 norm=None, 
+                 act='gelu', 
+                 last_norm=None, 
+                 num_layers=3, 
+                 hidden_dim=2048, 
+                 bottleneck_dim=256, 
+                 norm_last_layer=True,
+                 epsilon=1e-5,
+                 **kwargs):
+        super().__init__()
+        
+        self.act = eval(act)()
+        if norm is not None:
+            self.norm = eval(norm_layer)(out_dim, epsilon=epsilon)
+        if last_norm is not None:
+            self.last_norm = eval(norm_layer)(out_dim, epsilon=epsilon)
+            
+        self.num_layers = max(num_layers, 1)
+        if num_layers == 1:
+            if bottleneck_dim > 0:
+                self.mlp = nn.Linear(in_dim, bottleneck_dim)
+            else:
+                self.mlp = nn.Linear(in_dim, out_dim)
+        else:
+            layers = [nn.Linear(in_dim, hidden_dim)]
+            if norm is not None:
+                layers.append(norm)
+            layers.append(act)
+            for _ in range(num_layers - 2):
+                layers.append(nn.Linear(hidden_dim, hidden_dim))
+                if norm is not None:
+                    layers.append(norm)
+                layers.append(act)
+            if bottleneck_dim > 0:
+                layers.append(nn.Linear(hidden_dim, bottleneck_dim))
+            else:
+                layers.append(nn.Linear(hidden_dim, out_dim))
+            self.mlp = CustomSequential(*layers)
+        self.apply(self._init_weights)
+        
+        if bottleneck_dim > 0:
+            self.last_layer = nn.utils.weight_norm(nn.Linear(bottleneck_dim, out_dim, bias=False))
+            self.last_layer.weight_g.data.fill_(1)
+            if norm_last_layer:
+                self.last_layer.weight_g.requires_grad = False
+        else:
+            self.last_layer = None
+            
+    def forward(self, x):
+        pass
+
 
 class MultiCropWrapper(nn.Layer):
     """
