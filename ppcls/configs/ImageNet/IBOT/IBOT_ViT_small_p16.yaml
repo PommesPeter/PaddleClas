@@ -33,11 +33,11 @@ Arch:
   infer_model_name: "Student"
   models:
     - Teacher:
-        name: ViT_small_patch16_224
+        name: IBOT_ViT_small_patch16_224
         class_num: *class_num
         pretrained: True
     - Student:
-        name: ViT_small_patch16_224
+        name: IBOT_ViT_small_patch16_224
         class_num: *class_num
         pretrained: False
  
@@ -69,35 +69,15 @@ Optimizer:
 DataLoader:
   Train:
     dataset:
-      name: ImageNetDataset
+      name: IBOTDataset
       image_root: ./dataset/ILSVRC2012/
       cls_label_path: ./dataset/ILSVRC2012/train_list.txt
       transform_ops:
-        - DecodeImage:
-            to_rgb: True
-            channel_first: False
-        - RandCropImage:
-            size: 224
-            scale: 0.14
-            interpolation: bicubic
-        - RandomHorizontalFlip:
-            prob: 0.5
-        - RandomApply:
-            transforms:
-              - ColorJitter:
-                  brightness: 0.4
-                  contrast: 0.4
-                  saturation: 0.2
-                  hue: 0.1
-            p: 0.8
-        - RandomGrayscale:
-            p: 0.2
-        - BlurImage:
-            ratio: 0.1
-        - NormalizeImage:
-            scale: 1.0/255.0
-            mean: [0.485, 0.456, 0.406]
-            std: [0.229, 0.224, 0.225]
+        - DataAugmentationiBOT:
+            global_crops_scale: 1
+            local_crops_scale: 1
+            global_crops_number: 1
+            local_crops_number: 1
     sampler:
       name: DistributedBatchSampler
       batch_size: 1024
@@ -109,7 +89,7 @@ DataLoader:
 
   Eval:
     dataset: 
-      name: ImageNetDataset
+      name: IBOTDataset
       image_root: ./dataset/ILSVRC2012/
       cls_label_path: ./dataset/ILSVRC2012/val_list.txt
       transform_ops:

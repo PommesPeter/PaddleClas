@@ -4,7 +4,7 @@ import paddle
 import paddle.nn.functional as F
 import paddle.distributed as dist
 
-class iBOTLoss(nn.Layer):
+class IBOTLoss(nn.Layer):
     def __init__(self, out_dim, patch_out_dim, ngcrops, nlcrops, warmup_teacher_temp,
                  teacher_temp, warmup_teacher_temp2, teacher_temp2,
                  warmup_teacher_temp_epochs, nepochs, student_temp=0.1,

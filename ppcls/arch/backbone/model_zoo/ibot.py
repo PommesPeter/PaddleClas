@@ -28,77 +28,17 @@ from ..legendary_models.swin_transformer import SwinTransformer
 from ....utils.save_load import load_dygraph_pretrain, load_dygraph_pretrain_from_url
 
 MODEL_URLS = {
-    "IBOT_ViT_small_patch16_224":
-    "https://paddle-imagenet-models-name.bj.bcebos.com/dygraph/ViT_small_patch16_224_pretrained.pdparams",
-    "IBOT_ViT_base_patch16_224":
-    "https://paddle-imagenet-models-name.bj.bcebos.com/dygraph/ViT_base_patch16_224_pretrained.pdparams",
-    "IBOT_ViT_large_patch16_224":
-    "https://paddle-imagenet-models-name.bj.bcebos.com/dygraph/ViT_base_patch16_384_pretrained.pdparams",
-    "IBOT_Swin_tiny_patch7_224":
-    "https://paddle-imagenet-models-name.bj.bcebos.com/dygraph/ViT_base_patch32_384_pretrained.pdparams",
-    "IBOT_Swin_tiny_patch14_224":
-    "https://paddle-imagenet-models-name.bj.bcebos.com/dygraph/ViT_large_patch16_224_pretrained.pdparams",
+    "IBOT_ViT_small_patch16_224": "https://paddle-imagenet-models-name.bj.bcebos.com/dygraph/ViT_small_patch16_224_pretrained.pdparams",
+    "IBOT_ViT_base_patch16_224": "https://paddle-imagenet-models-name.bj.bcebos.com/dygraph/ViT_base_patch16_224_pretrained.pdparams",
+    "IBOT_ViT_large_patch16_224": "https://paddle-imagenet-models-name.bj.bcebos.com/dygraph/ViT_base_patch16_384_pretrained.pdparams",
+    "IBOT_Swin_tiny_patch7_224": "https://paddle-imagenet-models-name.bj.bcebos.com/dygraph/ViT_base_patch32_384_pretrained.pdparams",
+    "IBOT_Swin_tiny_patch14_224": "https://paddle-imagenet-models-name.bj.bcebos.com/dygraph/ViT_large_patch16_224_pretrained.pdparams",
 }
 
 __all__ = list(MODEL_URLS.keys())
 normal_ = Normal
-zeros_ = Constant(value=0.)
-ones_ = Constant(value=1.)
-
-class IBOTHead(nn.Layer):
-    def __init__(self, 
-                 in_dim, 
-                 out_dim, 
-                 norm=None, 
-                 act='gelu', 
-                 last_norm=None, 
-                 num_layers=3, 
-                 hidden_dim=2048, 
-                 bottleneck_dim=256, 
-                 norm_last_layer=True,
-                 epsilon=1e-5,
-                 **kwargs):
-        super().__init__()
-        
-        self.act = eval(act)()
-        if norm is not None:
-            self.norm = eval(norm_layer)(out_dim, epsilon=epsilon)
-        if last_norm is not None:
-            self.last_norm = eval(norm_layer)(out_dim, epsilon=epsilon)
-            
-        self.num_layers = max(num_layers, 1)
-        if num_layers == 1:
-            if bottleneck_dim > 0:
-                self.mlp = nn.Linear(in_dim, bottleneck_dim)
-            else:
-                self.mlp = nn.Linear(in_dim, out_dim)
-        else:
-            layers = [nn.Linear(in_dim, hidden_dim)]
-            if norm is not None:
-                layers.append(norm)
-            layers.append(act)
-            for _ in range(num_layers - 2):
-                layers.append(nn.Linear(hidden_dim, hidden_dim))
-                if norm is not None:
-                    layers.append(norm)
-                layers.append(act)
-            if bottleneck_dim > 0:
-                layers.append(nn.Linear(hidden_dim, bottleneck_dim))
-            else:
-                layers.append(nn.Linear(hidden_dim, out_dim))
-            self.mlp = CustomSequential(*layers)
-        self.apply(self._init_weights)
-        
-        if bottleneck_dim > 0:
-            self.last_layer = nn.utils.weight_norm(nn.Linear(bottleneck_dim, out_dim, bias=False))
-            self.last_layer.weight_g.data.fill_(1)
-            if norm_last_layer:
-                self.last_layer.weight_g.requires_grad = False
-        else:
-            self.last_layer = None
-            
-    def forward(self, x):
-        pass
+zeros_ = Constant(value=0.0)
+ones_ = Constant(value=1.0)
 
 
 class MultiCropWrapper(nn.Layer):
@@ -110,6 +50,7 @@ class MultiCropWrapper(nn.Layer):
     concatenate all the output features and run the head forward on these
     concatenated features.
     """
+
     def __init__(self, backbone, head=None):
         super(MultiCropWrapper, self).__init__()
         # disable layers dedicated to ImageNet labels classification
@@ -120,22 +61,24 @@ class MultiCropWrapper(nn.Layer):
         else:
             self.head = head
 
-    def forward(self, x, mask=None, return_backbone_feat=False,
-                **kwargs):
+    def forward(self, x, mask=None, return_backbone_feat=False, **kwargs):
         # convert to list
         if not isinstance(x, list):
             x = [x]
-        idx_crops = paddle.cumsum(paddle.unique_consecutive(
-            paddle.to_tensor([inp.shape[-1] for inp in x]),
-            return_counts=True,
-        )[1], 0)
+        idx_crops = paddle.cumsum(
+            paddle.unique_consecutive(
+                paddle.to_tensor([inp.shape[-1] for inp in x]),
+                return_counts=True,
+            )[1],
+            0,
+        )
 
         start_idx, output = 0, paddle.empty((0,))
         for end_idx in idx_crops:
-            inp_x = self.backbone(paddle.concat(x[start_idx: end_idx]))
+            inp_x = self.backbone(paddle.concat(x[start_idx:end_idx]))
 
             if mask is not None:
-                inp_m = paddle.concat(mask[start_idx: end_idx])
+                inp_m = paddle.concat(mask[start_idx:end_idx])
                 kwargs.update(dict(mask=inp_m))
 
             _out = self.backbone(inp_x, **kwargs)
@@ -151,19 +94,22 @@ class MultiCropWrapper(nn.Layer):
             return output, output_
         return output_
 
+
 class DINOHead(nn.Layer):
-    def __init__(self,
-                 in_dim,
-                 out_dim,
-                 norm=None,
-                 act_layer=nn.GELU,
-                 last_norm=None,
-                 nlayers=3,
-                 hidden_dim=2048,
-                 bottleneck_dim=256,
-                 norm_last_layer=True,
-                 epsilon=1e-5,
-                 **kwargs):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        norm=None,
+        act_layer=nn.GELU,
+        last_norm=None,
+        nlayers=3,
+        hidden_dim=2048,
+        bottleneck_dim=256,
+        norm_last_layer=True,
+        epsilon=1e-5,
+        **kwargs
+    ):
         super().__init__()
         if norm is not None:
             self.norm = eval(norm)(hidden_dim, epsilon=epsilon)
@@ -196,16 +142,16 @@ class DINOHead(nn.Layer):
             self.mlp = nn.Sequential(*layers)
         self.apply(self._init_weights)
 
-
         if bottleneck_dim > 0:
-            self.last_layer = nn.utils.weight_norm(nn.Linear(bottleneck_dim, out_dim, bias_attr=False))
+            self.last_layer = nn.utils.weight_norm(
+                nn.Linear(bottleneck_dim, out_dim, bias_attr=False)
+            )
             self.last_layer.weight_g.data.fill_(1)
             if norm_last_layer:
                 self.last_layer.weight_g.stop_gradient = False
 
         else:
             self.last_layer = None
-
 
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -224,31 +170,37 @@ class DINOHead(nn.Layer):
 
 
 class IBOTHead(DINOHead):
-    def __init__(self,
-                 *args,
-                 patch_out_dim=8192,
-                 norm=None,
-                 act_layer=nn.GELU,
-                 last_norm=None,
-                 nlayers=3,
-                 epsilon=1e-5,
-                 hidden_dim=2048,
-                 bottleneck_dim=256,
-                 norm_last_layer=True,
-                 shared_head=False,
-                 **kwargs):
-        super(IBOTHead, self).__init__(*args,
-                                       norm=norm,
-                                       act_layer=act_layer,
-                                       last_norm=last_norm,
-                                       nlayers=nlayers,
-                                       hidden_dim=hidden_dim,
-                                       bottleneck_dim=bottleneck_dim,
-                                       norm_last_layer=norm_last_layer,
-                                       **kwargs)
+    def __init__(
+        self,
+        *args,
+        patch_out_dim=8192,
+        norm=None,
+        act_layer=nn.GELU,
+        last_norm=None,
+        nlayers=3,
+        epsilon=1e-5,
+        hidden_dim=2048,
+        bottleneck_dim=256,
+        norm_last_layer=True,
+        shared_head=False,
+        **kwargs
+    ):
+        super(IBOTHead, self).__init__(
+            *args,
+            norm=norm,
+            act_layer=act_layer,
+            last_norm=last_norm,
+            nlayers=nlayers,
+            hidden_dim=hidden_dim,
+            bottleneck_dim=bottleneck_dim,
+            norm_last_layer=norm_last_layer,
+            **kwargs
+        )
         if not shared_head:
             if bottleneck_dim > 0:
-                self.last_layer2 = nn.utils.weight_norm(nn.Linear(bottleneck_dim, patch_out_dim, bias_attr=False))
+                self.last_layer2 = nn.utils.weight_norm(
+                    nn.Linear(bottleneck_dim, patch_out_dim, bias_attr=False)
+                )
                 self.last_layer2.weight_g.data.fill_(1)
                 if norm_last_layer:
                     self.last_layer2.weight_g.stop_gradient = False
@@ -266,7 +218,6 @@ class IBOTHead(DINOHead):
                 self.last_layer2 = None
 
             self.last_norm2 = self.last_norm
-
 
     def forward(self, x):
         if len(x.shape) == 2:
@@ -290,25 +241,27 @@ class IBOTHead(DINOHead):
 
 
 class IBOTVisionTransformer(VisionTransformer):
-    def __init__(self,
-                 img_size=224,
-                 patch_size=16,
-                 in_chans=3,
-                 class_num=1000,
-                 embed_dim=768,
-                 depth=12,
-                 num_heads=12,
-                 mlp_ratio=4,
-                 qkv_bias=False,
-                 qk_scale=None,
-                 drop_rate=0.,
-                 attn_drop_rate=0.,
-                 drop_path_rate=0.,
-                 norm_layer='nn.LayerNorm',
-                 epsilon=1e-5,
-                 return_all_token=False,
-                 masked_im_modeling=False
-                 ):
+    def __init__(
+        self,
+        img_size=224,
+        patch_size=16,
+        in_chans=3,
+        class_num=1000,
+        embed_dim=768,
+        depth=12,
+        num_heads=12,
+        mlp_ratio=4,
+        qkv_bias=False,
+        qk_scale=None,
+        drop_rate=0.0,
+        attn_drop_rate=0.0,
+        drop_path_rate=0.0,
+        norm_layer="nn.LayerNorm",
+        epsilon=1e-5,
+        return_all_token=False,
+        masked_im_modeling=False,
+        **kwargs
+    ):
         super(IBOTVisionTransformer, self).__init__(
             img_size,
             patch_size,
@@ -324,21 +277,24 @@ class IBOTVisionTransformer(VisionTransformer):
             attn_drop_rate,
             drop_path_rate,
             norm_layer,
-            epsilon
+            epsilon,
+            **kwargs
         )
         self.return_all_token = return_all_token
         self.masked_im_modeling = masked_im_modeling
-        
+
         self.head = IBOTHead()
-        
+
         if self.masked_im_modeling:
-            self.masked_embed = self.create_parameter(shape=[1, embed_dim], default_initializer=zeros_)
-        
+            self.masked_embed = self.create_parameter(
+                shape=[1, embed_dim], default_initializer=zeros_
+            )
+
     def forward_features(self, x, mask=None, return_all_tokens=None):
         # B = x.shape[0]
         B = paddle.shape(x)[0]
         x = self.patch_embed(x)
-        
+
         # mask image modeling
         if self.masked_im_modeling:
             assert mask is not None
@@ -350,7 +306,7 @@ class IBOTVisionTransformer(VisionTransformer):
         x = paddle.concat((cls_tokens, x), axis=1)
         x = x + self.pos_embed
         x = self.pos_drop(x)
-        
+
         for blk in self.blocks:
             x = blk(x)
         x = self.norm(x)
@@ -358,43 +314,46 @@ class IBOTVisionTransformer(VisionTransformer):
         # if self.fc_norm is not None:
         #     x[:, 0] = self.fc_norm(x[:, 1:, :].mean(1))
 
-        return_all_tokens = self.return_all_tokens if \
-            return_all_tokens is None else return_all_tokens
-            
+        return_all_tokens = (
+            self.return_all_tokens if return_all_tokens is None else return_all_tokens
+        )
+
         if return_all_tokens:
             return x
-        
+
         return x[:, 0]
-    
+
     def forward(self, x, mask=None):
         x = self.forward_features(x, mask, return_all_tokens=self.return_all_tokens)
         x = self.head(x)
-        
+
         return x
-    
+
 
 class IBOTSwinTransformer(SwinTransformer):
-    def __init__(self,
-                 img_size=256,
-                 patch_size=4,
-                 in_chans=3,
-                 class_num=1000,
-                 embed_dim=96,
-                 depths=[2, 2, 6, 2],
-                 num_heads=[3, 6, 12, 24],
-                 window_size=7,
-                 mlp_ratio=4.,
-                 qkv_bias=True,
-                 drop_rate=0.,
-                 attn_drop_rate=0.,
-                 drop_path_rate=0.1,
-                 norm_layer=nn.LayerNorm,
-                 ape=False,
-                 patch_norm=True,
-                 pretrained_window_sizes=[0, 0, 0, 0],
-                 return_all_tokens=False,
-                 masked_im_modeling=False
-                 ):
+    def __init__(
+        self,
+        img_size=256,
+        patch_size=4,
+        in_chans=3,
+        class_num=1000,
+        embed_dim=96,
+        depths=[2, 2, 6, 2],
+        num_heads=[3, 6, 12, 24],
+        window_size=7,
+        mlp_ratio=4.0,
+        qkv_bias=True,
+        drop_rate=0.0,
+        attn_drop_rate=0.0,
+        drop_path_rate=0.1,
+        norm_layer=nn.LayerNorm,
+        ape=False,
+        patch_norm=True,
+        pretrained_window_sizes=[0, 0, 0, 0],
+        return_all_tokens=False,
+        masked_im_modeling=False,
+        **kwargs
+    ):
         super(IBOTSwinTransformer, self).__init__(
             img_size,
             patch_size,
@@ -413,23 +372,26 @@ class IBOTSwinTransformer(SwinTransformer):
             ape,
             patch_norm,
             pretrained_window_sizes,
+            **kwargs
         )
         self.return_all_token = return_all_tokens
         self.masked_im_modeling = masked_im_modeling
-        
+
         if self.masked_im_modeling:
-            self.masked_embed = self.create_parameter(shape=[1, embed_dim], default_initializer=zeros_)
+            self.masked_embed = self.create_parameter(
+                shape=[1, embed_dim], default_initializer=zeros_
+            )
 
         self.head = IBOTHead()
 
     def forward_features(self, x, mask=None, return_all_tokens=None):
         x = self.patch_embed(x)
-        
+
         # mask image modeling
         if mask is not None:
             x = self.mask_model(x, mask)
         x = x.flatten(2).transpose(perm=[0, 2, 1])
-        
+
         if self.ape:
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
@@ -440,46 +402,50 @@ class IBOTSwinTransformer(SwinTransformer):
         x_region = self.norm(x)  # B L C
         x = self.avgpool(x_region.transpose([0, 2, 1]))  # B C 1
         x = paddle.flatten(x, 1)
-        
-        return_all_tokens = self.return_all_tokens if \
-            return_all_tokens is None else return_all_tokens
+
+        return_all_tokens = (
+            self.return_all_tokens if return_all_tokens is None else return_all_tokens
+        )
         if return_all_tokens:
             return paddle.concat([x.unsqueeze(1), x_region], axis=1)
 
         return x
-    
+
     def forward(self, x, mask=None):
         x = self.forward_features(x, mask, self.return_all_tokens)
         x = self.head(x)
         return x
-    
+
     def mask_model(self, x, mask):
         # extend mask for hierarchical features
         if x.shape[-2:] != mask.shape[-2:]:
             htimes, wtimes = np.array(x.shape[-2:]) // np.array(mask.shape[-2:])
             mask = mask.repeat_interleave(htimes, -2).repeat_interleave(wtimes, -1)
-        
+
         # mask embed
         x.permute(0, 2, 3, 1)[mask, :] = self.masked_embed.to(x.dtype)
 
         return x
 
 
-def _load_pretrained(pretrained,
-                     model, 
-                     model_url, 
-                     use_ssld=False,
-                     use_imagenet22k_pretrained=False,
-                     use_imagenet22kto1k_pretrained=False):
+def _load_pretrained(
+    pretrained,
+    model,
+    model_url,
+    use_ssld=False,
+    use_imagenet22k_pretrained=False,
+    use_imagenet22kto1k_pretrained=False,
+):
     if pretrained is False:
         pass
     elif pretrained is True:
         load_dygraph_pretrain_from_url(
-            model, 
+            model,
             model_url,
             use_ssld=use_ssld,
             use_imagenet22k_pretrained=use_imagenet22k_pretrained,
-            use_imagenet22kto1k_pretrained=use_imagenet22kto1k_pretrained)
+            use_imagenet22kto1k_pretrained=use_imagenet22kto1k_pretrained,
+        )
     elif isinstance(pretrained, str):
         load_dygraph_pretrain(model, pretrained)
     else:
@@ -489,20 +455,23 @@ def _load_pretrained(pretrained,
 
 
 def IBOT_ViT_small_patch16_224(pretrained=False, use_ssld=False, **kwargs):
+    model = MultiCropWrapper(
+        
+    )
     model = IBOTVisionTransformer(
         patch_size=16,
         embed_dim=384,
         depth=12,
         num_heads=6,
         mlp_ratio=4,
-        qk_scale=(384 // 6) **-0.5,
-        **kwargs)
+        qk_scale=(384 // 6) ** -0.5,
+        **kwargs
+    )
     _load_pretrained(
-        pretrained,
-        model,
-        MODEL_URLS["IBOT_ViT_small_patch16_224"],
-        use_ssld=use_ssld)
+        pretrained, model, MODEL_URLS["IBOT_ViT_small_patch16_224"], use_ssld=use_ssld
+    )
     return model
+
 
 def IBOT_ViT_base_patch16_224(pretrained=False, use_ssld=False, **kwargs):
     model = IBOTVisionTransformer(
@@ -512,12 +481,11 @@ def IBOT_ViT_base_patch16_224(pretrained=False, use_ssld=False, **kwargs):
         num_heads=12,
         mlp_ratio=4,
         qk_scale=(768 // 12) ** -0.5,
-        **kwargs)
+        **kwargs
+    )
     _load_pretrained(
-        pretrained,
-        model,
-        MODEL_URLS["IBOT_ViT_base_patch16_224"],
-        use_ssld=use_ssld)
+        pretrained, model, MODEL_URLS["IBOT_ViT_base_patch16_224"], use_ssld=use_ssld
+    )
     return model
 
 
@@ -529,12 +497,11 @@ def IBOT_ViT_large_patch16_224(pretrained=False, use_ssld=False, **kwargs):
         num_heads=16,
         mlp_ratio=4,
         qk_scale=(1024 // 12) ** -0.5,
-        **kwargs)
+        **kwargs
+    )
     _load_pretrained(
-        pretrained,
-        model,
-        MODEL_URLS["IBOT_ViT_large_patch16_224"],
-        use_ssld=use_ssld)
+        pretrained, model, MODEL_URLS["IBOT_ViT_large_patch16_224"], use_ssld=use_ssld
+    )
     return model
 
 
@@ -546,12 +513,11 @@ def IBOT_Swin_tiny_windows7_224(pretrained=False, use_ssld=False, **kwargs):
         num_heads=[3, 6, 12, 24],
         window_size=7,
         mlp_ratio=4,
-        **kwargs)
+        **kwargs
+    )
     _load_pretrained(
-        pretrained,
-        model,
-        MODEL_URLS["IBOT_Swin_tiny_windows7_224"],
-        use_ssld=use_ssld)
+        pretrained, model, MODEL_URLS["IBOT_Swin_tiny_windows7_224"], use_ssld=use_ssld
+    )
     return model
 
 
@@ -563,10 +529,9 @@ def IBOT_Swin_tiny_windows14_224(pretrained=False, use_ssld=False, **kwargs):
         num_heads=[3, 6, 12, 24],
         window_size=14,
         mlp_ratio=4,
-        **kwargs)
+        **kwargs
+    )
     _load_pretrained(
-        pretrained,
-        model,
-        MODEL_URLS["IBOT_Swin_tiny_windows14_224"],
-        use_ssld=use_ssld)
+        pretrained, model, MODEL_URLS["IBOT_Swin_tiny_windows14_224"], use_ssld=use_ssld
+    )
     return model
