@@ -34,6 +34,7 @@ from .distillationloss import DistillationSKDLoss
 from .distillationloss import DistillationMultiLabelLoss
 from .distillationloss import DistillationDISTLoss
 from .distillationloss import DistillationPairLoss
+from .ibotloss import IBOTLoss
 
 from .multilabelloss import MultiLabelLoss
 from .afdloss import AFDLoss
