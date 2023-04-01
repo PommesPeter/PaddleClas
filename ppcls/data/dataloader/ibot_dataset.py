@@ -100,11 +100,10 @@ class IBOTDataset(CommonDataset):
             return 0
 
         if isinstance(self.pred_ratio, list):
-            pred_ratio = []
-            for prm, prv in zip(self.pred_ratio, self.pred_ratio_var):
-                assert prm >= prv
-                pr = random.uniform(prm - prv, prm + prv) if prv > 0 else prm
-                pred_ratio.append(pr)
+            pred_ratio = [
+                random.uniform(prm - prv, prm + prv) if prv > 0 and prm >= prv else prm
+                for prm, prv in zip(self.pred_ratio, self.pred_ratio_var)
+            ]
             pred_ratio = random.choice(pred_ratio)
         else:
             assert self.pred_ratio >= self.pred_ratio_var
@@ -125,7 +124,6 @@ class IBOTDataset(CommonDataset):
                 continue
 
             high = self.get_pred_ratio() * H * W
-
             if self.pred_shape == 'block':
                 # following BEiT (https://arxiv.org/abs/2106.08254), see at
                 # https://github.com/microsoft/unilm/blob/b94ec76c36f02fb2b0bf0dcb0b8554a2185173cd/beit/masking_generator.py#L55
@@ -168,10 +166,8 @@ class IBOTDataset(CommonDataset):
                 ]).astype(bool)
                 np.random.shuffle(mask)
                 mask = mask.reshape(H, W)
-
             else:
-                # no implementation
-                assert False
+                raise ValueError("Invalid pred shape you input it.")
 
             masks.append(mask)
 
