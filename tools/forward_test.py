@@ -1,5 +1,10 @@
 import numpy as np
 import paddle
+import sys
+sys.path.append("../")
+from ppcls.loss.ibotloss import IBOTLoss
+
+
 import torch
 from reprod_log import ReprodLogger
 from collections import OrderedDict
@@ -24,10 +29,9 @@ def setup_seed(seed=10):
 
 
 if __name__ == "__main__":
-    paddle.set_device("cpu")
+    paddle.set_device("gpu")
     # load model
     # the model is save into ~/.cache/torch/hub/checkpoints/alexnet-owt-4df8aa71.pth
-
     # def logger
     reprod_logger = ReprodLogger()
     setup_seed(10)
@@ -39,9 +43,11 @@ if __name__ == "__main__":
     # print(weight[0])
 
 
-    paddle_model = IBOT_ViT_small_patch16_224(pretrained=False)
-    paddle_weight = paddle_model.state_dict()
-    paddle_model.eval()
+    student = IBOT_ViT_small_patch16_224(pretrained=False,norm_last_layer=False,masked_im_modeling=True)
+    teacher = IBOT_ViT_small_patch16_224(pretrained=False,norm_last_layer=True,masked_im_modeling=False)
+    paddle_weight = student.state_dict()
+    student.eval()
+    teacher.eval()
     # 检查是否paddle中的key在torch的dict中能找到
     # for paddle_key in paddle_weight:
     #     if paddle_key in torch_weight.keys():
@@ -65,7 +71,16 @@ if __name__ == "__main__":
         else:
             pass
 
-    paddle_model.set_dict(new_weight_dict)
+    student.set_dict(new_weight_dict)
+    teacher.set_dict(new_weight_dict)
+    ibot_loss = IBOTLoss(
+        out_dim=8192,
+        patch_out_dim=8192,
+        ngcrops=2,
+        nlcrops=10,
+        teacher_temp=0.07
+    )
+
     # paddle.save(paddle_model.state_dict(),"/data1/linkaihao/reproduce/ibot/duiqi/student2.pdparams")
     torch_fake_data_list = []
     torch_fake_label_list = []
@@ -96,31 +111,33 @@ if __name__ == "__main__":
 
     # fake_mask = np.random.rand(1, 3, 14, 14) > 0.5
     fake_label = np.arange(1).astype(np.int64)
-    for _ in range(0, 2):
+    for _ in range(0, 12):
         torch_fake_data_list.append(torch_fake_data)
         # fake_label_list.append(fake_label)
         torch_fake_mask_list.append(torch_fake_mask)
         paddle_fake_data_list.append(paddle_fake_data)
         # fake_label_list.append(fake_label)
-        paddle_fake_mask_list.append(paddle_fake_mask)
+        paddle_fake_mask_list.append(paddle_fake_mask.cuda())
 
-    out_save = paddle_model(paddle_fake_data_list,mask=paddle_fake_mask_list)
+    # out_save = paddle_model(paddle_fake_data_list,mask=paddle_fake_mask_list)
     reprod_logger = ReprodLogger()
-    reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
-    reprod_logger.save("/data1/linkaihao/reproduce/ibot/duiqi/forward_paddle.npy")
-    #
+    # reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
+    # reprod_logger.save("/data1/linkaihao/reproduce/ibot/duiqi/forward_paddle.npy")
+    with paddle.no_grad():
+        teacher_output = teacher(paddle_fake_data_list[:2])
+        student_output = student(paddle_fake_data_list[:2], mask=paddle_fake_mask_list[:2])
+        student.backbone.masked_im_modeling = False
+        student_local_cls = student(paddle_fake_data_list[2:])[0] if len(paddle_fake_data_list) > 2 else None
+        all_loss = ibot_loss(student_output, teacher_output, student_local_cls, paddle_fake_mask_list[2:], 2)
+        loss = all_loss.pop('loss')
+        print(loss.cpu().detach().numpy())
+        reprod_logger.add("logits", loss.cpu().detach().numpy())
+        reprod_logger.save("/data1/linkaihao/reproduce/ibot/duiqi/loss_paddle.npy")
+
     from reprod_log import ReprodDiffHelper
     diff_helper = ReprodDiffHelper()
-    torch_info = diff_helper.load_info("/data1/linkaihao/reproduce/ibot/duiqi/forward_torch.npy")
-    paddle_info = diff_helper.load_info("/data1/linkaihao/reproduce/ibot/duiqi/forward_paddle.npy")
+    torch_info = diff_helper.load_info("/data1/linkaihao/reproduce/ibot/duiqi/loss_torch.npy")
+    paddle_info = diff_helper.load_info("/data1/linkaihao/reproduce/ibot/duiqi/loss_paddle.npy")
     diff_helper.compare_info(torch_info, paddle_info)
     diff_helper.report(path="/data1/linkaihao/reproduce/ibot/duiqi/forward_diff.log")
 
-    # # read or gen fake data
-    # fake_data = np.load("../../fake_data/fake_data.npy")
-    # fake_data = paddle.to_tensor(fake_data)
-    # # forward
-    # out = model(fake_data)
-    # #
-    # reprod_logger.add("logits", out.cpu().detach().numpy())
-    # reprod_logger.save("forward_paddle.npy")

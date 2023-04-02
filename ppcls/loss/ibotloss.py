@@ -5,9 +5,9 @@ import paddle.nn.functional as F
 import paddle.distributed as dist
 
 class IBOTLoss(nn.Layer):
-    def __init__(self, out_dim, patch_out_dim, ngcrops, nlcrops, warmup_teacher_temp,
-                 teacher_temp, warmup_teacher_temp2, teacher_temp2,
-                 warmup_teacher_temp_epochs, nepochs, student_temp=0.1,
+    def __init__(self, out_dim=8192, patch_out_dim=8192, ngcrops=2, nlcrops=0, warmup_teacher_temp=0.04,
+                 teacher_temp=0.04, warmup_teacher_temp2=0.04, teacher_temp2=0.07,
+                 warmup_teacher_temp_epochs=30, nepochs=200, student_temp=0.1,
                  center_momentum=0.9, center_momentum2=0.9,
                  lambda1=1.0, lambda2=1.0, mim_start_epoch=0):
         super().__init__()
@@ -17,8 +17,8 @@ class IBOTLoss(nn.Layer):
         self.ngcrops = ngcrops
         self.nlcrops = nlcrops
         self.ncrops = ngcrops + nlcrops
-        self.register_buffer("center", paddle.zeros(1, out_dim))
-        self.register_buffer("center2", paddle.zeros(1, 1, patch_out_dim))
+        self.register_buffer("center", paddle.zeros((1, out_dim)))
+        self.register_buffer("center2", paddle.zeros((1, 1, patch_out_dim)))
         self.lambda1 = lambda1
         self.lambda2 = lambda2
 
@@ -70,8 +70,8 @@ class IBOTLoss(nn.Layer):
             for v in range(len(student_cls_c)):
                 if v == q:
                     loss2 = paddle.sum(-teacher_patch_c[q] * F.log_softmax(student_patch_c[v], axis=-1), axis=-1)
-                    mask = student_mask[v].flatten(-2, -1)
-                    loss2 = paddle.sum(loss2 * mask.float(), axis=-1) / mask.sum(dim=-1).clamp(min=1.0)
+                    mask = paddle.flatten(student_mask[v].astype('float64'),-2,-1)
+                    loss2 = paddle.sum(loss2 * mask, axis=-1) / mask.sum(axis=-1).clip(min=1.0)
                     total_loss2 += loss2.mean()
                     n_loss_terms2 += 1
                 else:
@@ -93,9 +93,11 @@ class IBOTLoss(nn.Layer):
         cls_center = paddle.sum(teacher_cls, axis=0, keepdim=True)
         dist.all_reduce(cls_center)
         cls_center = cls_center / (len(teacher_cls) * dist.get_world_size())
+        # cls_center = cls_center / (len(teacher_cls)* 1 )
         self.center = self.center * self.center_momentum + cls_center * (1 - self.center_momentum)
 
         patch_center = paddle.sum(teacher_patch.mean(1), axis=0, keepdim=True)
         dist.all_reduce(patch_center)
         patch_center = patch_center / (len(teacher_patch) * dist.get_world_size())
+        # patch_center = patch_center / (len(teacher_patch) * 1)
         self.center2 = self.center2 * self.center_momentum2 + patch_center * (1 - self.center_momentum2)
