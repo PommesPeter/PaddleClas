@@ -146,7 +146,7 @@ class DINOHead(nn.Layer):
 
         if bottleneck_dim > 0:
             self.last_layer = nn.utils.weight_norm(
-                nn.Linear(bottleneck_dim, out_dim, bias_attr=False)
+                nn.Linear(bottleneck_dim, out_dim, bias_attr=False),dim=1
             )
             ones_(self.last_layer.weight_g)
             if norm_last_layer:
@@ -201,7 +201,7 @@ class IBOTHead(DINOHead):
         if not shared_head:
             if bottleneck_dim > 0:
                 self.last_layer2 = nn.utils.weight_norm(
-                    nn.Linear(bottleneck_dim, patch_out_dim, bias_attr=False)
+                    nn.Linear(bottleneck_dim, patch_out_dim, bias_attr=False),dim=1
                 )
                 ones_(self.last_layer2.weight_g)
                 if norm_last_layer:
@@ -253,7 +253,7 @@ class IBOTVisionTransformer(VisionTransformer):
         depth=12,
         num_heads=12,
         mlp_ratio=4,
-        qkv_bias=False,
+        qkv_bias=True,
         qk_scale=None,
         drop_rate=0.0,
         attn_drop_rate=0.0,
@@ -292,7 +292,7 @@ class IBOTVisionTransformer(VisionTransformer):
             self.masked_embed = self.create_parameter(
                 shape=[1, embed_dim], default_initializer=zeros_
             )
-
+        # trunc_normal_(self.masked_embed)
     def interpolate_pos_encoding(self, x, w, h):
         npatch = x.shape[1] - 1
         N = self.pos_embed.shape[1] - 1
@@ -355,18 +355,13 @@ class IBOTVisionTransformer(VisionTransformer):
         return x
 
     def mask_model(self, x, mask):
-        x = x.transpose((0,2,1))
+        x = paddle.transpose(x, perm=[0, 2, 1])
         C,N,HW = x.shape
         H,W = int(self.img_size/self.patch_size),int(self.img_size/self.patch_size)
         x = x.reshape([C,N,H,W])
-        x.transpose([0, 2, 3, 1])[mask, :] = paddle.cast(self.masked_embed,x.dtype)
-        # x = paddle.transpose(x, perm=[0, 2, 3, 1])
-        # # 使用logical_not函数获取与mask相反的布尔掩码
-        # not_mask = paddle.logical_not(mask)
-        # # 将满足mask条件的数据替换为masked_embed
-        # x = paddle.where(mask.unsqueeze(-1), paddle.cast(self.masked_embed, x.dtype), x)
-        # # 将不满足mask条件的数据替换为原来的数据
-        # x = paddle.where(not_mask.unsqueeze(-1), x, x)
+        x = paddle.transpose(x, perm=[0, 2, 3, 1])
+        x = paddle.where(mask.unsqueeze(-1), paddle.cast(self.masked_embed, x.dtype), x)
+        x = paddle.transpose(x, perm=[0, 3, 1, 2])
         return x
 
 
@@ -495,8 +490,6 @@ def _load_pretrained(
 
 
 def IBOT_ViT_small_patch16_224(pretrained=False, use_ssld=False, **kwargs):
-    # out_dim = 8192,
-    # norm = None,
     backbone = IBOTVisionTransformer(
         patch_size=16,
         embed_dim=384,
@@ -519,7 +512,7 @@ def IBOT_ViT_small_patch16_224(pretrained=False, use_ssld=False, **kwargs):
 
 
 def IBOT_ViT_base_patch16_224(pretrained=False, use_ssld=False, **kwargs):
-    model = IBOTVisionTransformer(
+    backbone = IBOTVisionTransformer(
         patch_size=16,
         embed_dim=768,
         depth=12,
@@ -529,13 +522,18 @@ def IBOT_ViT_base_patch16_224(pretrained=False, use_ssld=False, **kwargs):
         **kwargs
     )
     _load_pretrained(
-        pretrained, model, MODEL_URLS["IBOT_ViT_base_patch16_224"], use_ssld=use_ssld
+        pretrained, backbone, MODEL_URLS["IBOT_ViT_base_patch16_224"], use_ssld=use_ssld
+    )
+    model = MultiCropWrapper(
+        backbone,
+        IBOTHead(in_dim=768, out_dim=8192, patch_out_dim=8192, norm=None, act_layer=nn.GELU, norm_last_layer=False,
+                 shared_head=True)
     )
     return model
 
 
 def IBOT_ViT_large_patch16_224(pretrained=False, use_ssld=False, **kwargs):
-    model = IBOTVisionTransformer(
+    backbone = IBOTVisionTransformer(
         patch_size=16,
         embed_dim=1024,
         depth=24,
@@ -545,13 +543,18 @@ def IBOT_ViT_large_patch16_224(pretrained=False, use_ssld=False, **kwargs):
         **kwargs
     )
     _load_pretrained(
-        pretrained, model, MODEL_URLS["IBOT_ViT_large_patch16_224"], use_ssld=use_ssld
+        pretrained, backbone, MODEL_URLS["IBOT_ViT_large_patch16_224"], use_ssld=use_ssld
+    )
+    model = MultiCropWrapper(
+        backbone,
+        IBOTHead(in_dim=1024, out_dim=8192, patch_out_dim=8192, norm=None, act_layer=nn.GELU, norm_last_layer=False,
+                 shared_head=True)
     )
     return model
 
 
 def IBOT_Swin_tiny_windows7_224(pretrained=False, use_ssld=False, **kwargs):
-    model = IBOTSwinTransformer(
+    backbone = IBOTSwinTransformer(
         img_size=224,
         embed_dim=96,
         depths=[2, 2, 6, 2],
@@ -561,22 +564,13 @@ def IBOT_Swin_tiny_windows7_224(pretrained=False, use_ssld=False, **kwargs):
         **kwargs
     )
     _load_pretrained(
-        pretrained, model, MODEL_URLS["IBOT_Swin_tiny_windows7_224"], use_ssld=use_ssld
+        pretrained, backbone, MODEL_URLS["IBOT_Swin_tiny_windows7_224"], use_ssld=use_ssld
+    )
+    model = MultiCropWrapper(
+        backbone,
+        IBOTHead(in_dim=96, out_dim=8192, patch_out_dim=8192, norm=None, act_layer=nn.GELU, norm_last_layer=False,
+                 shared_head=True)
     )
     return model
 
 
-def IBOT_Swin_tiny_windows14_224(pretrained=False, use_ssld=False, **kwargs):
-    model = IBOTSwinTransformer(
-        img_size=224,
-        embed_dim=96,
-        depths=[2, 2, 6, 2],
-        num_heads=[3, 6, 12, 24],
-        window_size=14,
-        mlp_ratio=4,
-        **kwargs
-    )
-    _load_pretrained(
-        pretrained, model, MODEL_URLS["IBOT_Swin_tiny_windows14_224"], use_ssld=use_ssld
-    )
-    return model

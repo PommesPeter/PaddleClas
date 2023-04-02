@@ -2,7 +2,7 @@ import numpy as np
 import paddle
 import torch
 from reprod_log import ReprodLogger
-
+from collections import OrderedDict
 from ppcls.arch.backbone.model_zoo.ibot import IBOT_ViT_small_patch16_224
 
 def setup_seed(seed=10):
@@ -30,13 +30,43 @@ if __name__ == "__main__":
 
     # def logger
     reprod_logger = ReprodLogger()
-
-    model = IBOT_ViT_small_patch16_224(pretrained=False)
-    param_dict = paddle.load("/data1/linkaihao/reproduce/ibot/duiqi/student.pdparams")
-    model.set_dict(param_dict)
-    model.eval()
     setup_seed(10)
+    torch_weight = torch.load("/data1/linkaihao/reproduce/ibot/duiqi/student.pth")
+    weight = []
+    for torch_key in torch_weight.keys():
+        weight.append([torch_key, torch_weight[torch_key].detach().numpy()])
+    #     print(torch_key)
+    # print(weight[0])
 
+
+    paddle_model = IBOT_ViT_small_patch16_224(pretrained=False)
+    paddle_weight = paddle_model.state_dict()
+    paddle_model.eval()
+    # 检查是否paddle中的key在torch的dict中能找到
+    # for paddle_key in paddle_weight:
+    #     if paddle_key in torch_weight.keys():
+    #         print("Oh Yeah")
+    #     else:
+    #         print("No!!!")
+
+    # param_dict = paddle.load("/data1/linkaihao/reproduce/ibot/duiqi/student2.pdparams")
+    # paddle_model.set_dict(param_dict)
+
+    new_weight_dict = OrderedDict()
+    for paddle_key in paddle_weight.keys():
+        # 首先要确保torch的权重里面有这个key，这样就可以避免DIY模型中一些小模块影响权重转换
+        if paddle_key in torch_weight.keys():
+            # pytorch权重和paddle模型的权重为2维时需要转置，其余情况不需要
+            if len(torch_weight[paddle_key].detach().numpy().shape) == 2 and "masked_embed" not in paddle_key:
+                # print(paddle_key)
+                new_weight_dict[paddle_key] = torch_weight[paddle_key].detach().numpy().T
+            else:
+                new_weight_dict[paddle_key] = torch_weight[paddle_key].detach().numpy()
+        else:
+            pass
+
+    paddle_model.set_dict(new_weight_dict)
+    # paddle.save(paddle_model.state_dict(),"/data1/linkaihao/reproduce/ibot/duiqi/student2.pdparams")
     torch_fake_data_list = []
     torch_fake_label_list = []
     torch_fake_mask_list = []
@@ -74,7 +104,18 @@ if __name__ == "__main__":
         # fake_label_list.append(fake_label)
         paddle_fake_mask_list.append(paddle_fake_mask)
 
-    model(paddle_fake_data_list,mask=paddle_fake_mask_list)
+    out_save = paddle_model(paddle_fake_data_list,mask=paddle_fake_mask_list)
+    reprod_logger = ReprodLogger()
+    reprod_logger.add("logits", out_save[0].cpu().detach().numpy())
+    reprod_logger.save("/data1/linkaihao/reproduce/ibot/duiqi/forward_paddle.npy")
+    #
+    from reprod_log import ReprodDiffHelper
+    diff_helper = ReprodDiffHelper()
+    torch_info = diff_helper.load_info("/data1/linkaihao/reproduce/ibot/duiqi/forward_torch.npy")
+    paddle_info = diff_helper.load_info("/data1/linkaihao/reproduce/ibot/duiqi/forward_paddle.npy")
+    diff_helper.compare_info(torch_info, paddle_info)
+    diff_helper.report(path="/data1/linkaihao/reproduce/ibot/duiqi/forward_diff.log")
+
     # # read or gen fake data
     # fake_data = np.load("../../fake_data/fake_data.npy")
     # fake_data = paddle.to_tensor(fake_data)
