@@ -321,8 +321,8 @@ class IBOTVisionTransformer(VisionTransformer):
         x = self.patch_embed(x)
         x = paddle.transpose(x, perm=[0, 2, 1])
         C,N,HW = x.shape
-        H,W = int(self.img_size/self.patch_size),int(self.img_size/self.patch_size)
-        x = x.reshape([C,N,H,W])
+        H, W = int(self.img_size / self.patch_size), int(self.img_size / self.patch_size)
+        x = x.reshape([C, N, H, W])
         # mask image modeling
         if self.masked_im_modeling:
             assert mask is not None
@@ -573,3 +573,22 @@ def IBOT_Swin_tiny_windows7_224(pretrained=False, use_ssld=False, **kwargs):
     return model
 
 
+def IBOT_Swin_tiny_windows14_224(pretrained=False, use_ssld=False, **kwargs):
+    backbone = IBOTSwinTransformer(
+        img_size=224,
+        embed_dim=96,
+        depths=[2, 2, 6, 2],
+        num_heads=[3, 6, 12, 24],
+        window_size=14,
+        mlp_ratio=4,
+        **kwargs
+    )
+    _load_pretrained(
+        pretrained, backbone, MODEL_URLS["IBOT_Swin_tiny_windows14_224"], use_ssld=use_ssld
+    )
+    model = MultiCropWrapper(
+        backbone,
+        IBOTHead(in_dim=96, out_dim=8192, patch_out_dim=8192, norm=None, act_layer=nn.GELU, norm_last_layer=False,
+                 shared_head=True)
+    )
+    return model

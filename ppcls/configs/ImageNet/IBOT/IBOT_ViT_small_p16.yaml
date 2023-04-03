@@ -47,7 +47,7 @@ Loss:
     - DistillationCELoss:
        weight: 1.0
        key: logits
-       model_names: ["Student", "Teacher"]
+       model_name_pairs: ["Student", "Teacher"]
   Eval:
     - CELoss:
         weight: 1.0
@@ -70,8 +70,8 @@ DataLoader:
   Train:
     dataset:
       name: IBOTDataset
-      image_root: ./dataset/ILSVRC2012/
-      cls_label_path: ./dataset/ILSVRC2012/train_list.txt
+      image_root: ../dataset/ILSVRC2012/
+      cls_label_path: ../dataset/ILSVRC2012/train_list.txt
       transform_ops:
         - IBOTAugmentation:
             transform_ops_global:
@@ -83,7 +83,7 @@ DataLoader:
                   prob: 0.5
               - RandomApply:
                   transforms:
-                    - ColorJitter:
+                    - RawColorJitter:
                         brightness: 0.4
                         contrast: 0.4
                         saturation: 0.4
@@ -109,7 +109,7 @@ DataLoader:
                   prob: 0.5
               - RandomApply:
                   transforms:
-                    - ColorJitter:
+                    - RawColorJitter:
                         brightness: 0.4
                         contrast: 0.4
                         saturation: 0.4
@@ -137,8 +137,8 @@ DataLoader:
   Eval:
     dataset: 
       name: IBOTDataset
-      image_root: ./dataset/ILSVRC2012/
-      cls_label_path: ./dataset/ILSVRC2012/val_list.txt
+      image_root: ../dataset/ILSVRC2012/
+      cls_label_path: ../dataset/ILSVRC2012/val_list.txt
       transform_ops:
         - DecodeImage:
             to_rgb: True

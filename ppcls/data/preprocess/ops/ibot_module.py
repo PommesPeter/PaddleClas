@@ -52,20 +52,24 @@ class IBOTAugmentation(object):
         self.global_number = global_crops_number
         self.local_number = local_crops_number
         
-        ts_global = []
-        for t in transform_ops_global:
-            for key in t.keys():
-                ts_global.append(eval(key)(**t[key]))
+        ts_global = self._create_ops(transform_ops_global)
         ts_global2 = ts_global.copy()
         _ = ts_global2.pop(-1)
         self.trans_global = T.Compose(ts_global)
         self.trans_global2 = T.Compose(ts_global2)
         
-        ts_local = []
-        for t in transform_ops_local:
-            for key in t.keys():
-                ts_local.append(eval(key)(**t[key]))
+        ts_local = self._create_ops(transform_ops_local)
         self.trans_local = T.Compose(ts_local)
+        
+    def _create_ops(self, transform):
+        ts = []
+        for t in transform:
+            for key in t.keys():
+                if t[key] is not None:
+                    ts.append(eval(key)(**t[key]))
+                else:
+                    ts.append(eval(key)())
+        return ts
 
     def __call__(self, img):
         global_crops_imgs = [self.trans_global(img) 
