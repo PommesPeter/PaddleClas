@@ -319,7 +319,10 @@ class IBOTVisionTransformer(VisionTransformer):
         # B = x.shape[0]
         B, nc, w, h = x.shape
         x = self.patch_embed(x)
-
+        x = paddle.transpose(x, perm=[0, 2, 1])
+        C,N,HW = x.shape
+        H,W = int(self.img_size/self.patch_size),int(self.img_size/self.patch_size)
+        x = x.reshape([C,N,H,W])
         # mask image modeling
         if self.masked_im_modeling:
             assert mask is not None
@@ -355,10 +358,6 @@ class IBOTVisionTransformer(VisionTransformer):
         return x
 
     def mask_model(self, x, mask):
-        x = paddle.transpose(x, perm=[0, 2, 1])
-        C,N,HW = x.shape
-        H,W = int(self.img_size/self.patch_size),int(self.img_size/self.patch_size)
-        x = x.reshape([C,N,H,W])
         x = paddle.transpose(x, perm=[0, 2, 3, 1])
         x = paddle.where(mask.unsqueeze(-1), paddle.cast(self.masked_embed, x.dtype), x)
         x = paddle.transpose(x, perm=[0, 3, 1, 2])
@@ -489,7 +488,7 @@ def _load_pretrained(
         )
 
 
-def IBOT_ViT_small_patch16_224(pretrained=False, use_ssld=False, **kwargs):
+def IBOT_ViT_small_patch16_224(pretrained=False, use_ssld=False,in_dim=384,out_dim=8192,patch_out_dim=8192,norm=None,act_layer=nn.GELU,norm_last_layer=False,shared_head=True,masked_im_modeling=False, **kwargs):
     backbone = IBOTVisionTransformer(
         patch_size=16,
         embed_dim=384,
@@ -498,7 +497,7 @@ def IBOT_ViT_small_patch16_224(pretrained=False, use_ssld=False, **kwargs):
         mlp_ratio=4,
         qk_scale=(384 // 6) ** -0.5,
         return_all_tokens=True,
-        masked_im_modeling=True,
+        masked_im_modeling=masked_im_modeling,
         **kwargs
     )
     _load_pretrained(
@@ -506,7 +505,7 @@ def IBOT_ViT_small_patch16_224(pretrained=False, use_ssld=False, **kwargs):
     )
     model = MultiCropWrapper(
         backbone,
-        IBOTHead(in_dim=384,out_dim=8192,patch_out_dim=8192,norm=None,act_layer=nn.GELU,norm_last_layer=False,shared_head=True)
+        IBOTHead(in_dim=in_dim,out_dim=out_dim,patch_out_dim=patch_out_dim,norm=norm,act_layer=act_layer,norm_last_layer=norm_last_layer,shared_head=shared_head)
     )
     return model
 
