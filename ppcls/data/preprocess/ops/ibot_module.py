@@ -1,6 +1,7 @@
 import random
 
 from paddle.vision import transforms
+from paddle.vision.transforms import *
 from paddle.vision.transforms import transforms as T
 from PIL import ImageFilter, ImageOps
 
